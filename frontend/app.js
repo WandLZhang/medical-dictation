@@ -205,7 +205,7 @@ function addSubmitButton() {
 }
 
 async function callCloudFunction(userMessage) {
-    const cloudFunctionUrl = 'https://us-central1-<redacted>.cloudfunctions.net/medical-dictation-function';
+    const cloudFunctionUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/medical-dictation-function';
 
     const payload = {
         userMessage: userMessage,
@@ -293,7 +293,7 @@ function updateCompletionBoxes() {
                 if (isCompleted) {
                     const value = getFieldValue(currentRecord[section], field);
                     const originalLabel = boxElement.textContent;
-                    boxElement.setAttribute('data-tooltip', `<strong>${originalLabel}:</strong><br>${value}`);
+                    boxElement.setAttribute('data-tooltip', `${value}`);
                 } else {
                     boxElement.setAttribute('data-tooltip', '');
                 }
@@ -324,11 +324,11 @@ function formatArrayValue(arr) {
             return `${item.code}: ${item.description}`;
         }
         return item.toString();
-    }).join('<br>');
+    }).join(',');
 }
 
 async function submitToBigQuery() {
-    const submitUrl = 'https://us-central1-<redacted>.cloudfunctions.net/submit-to-bigquery';
+    const submitUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/submit-to-bigquery';
     
     showLoadingSpinner();
     
@@ -361,7 +361,7 @@ async function submitToBigQuery() {
 }
 
 async function generateFieldReport() {
-    const generateUrl = 'https://us-central1-<redacted>.cloudfunctions.net/generate-field-report';
+    const generateUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/generate-field-report';
     
     showLoadingSpinner();
     

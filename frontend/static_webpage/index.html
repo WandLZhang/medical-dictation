@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Coding Assistant</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+    <style>
+        /* Base styles */
+:root {
+    --primary-color: #2563eb;
+    --primary-hover: #1d4ed8;
+    --background-color: #f3f4f6;
+    --text-color: #1f2937;
+    --border-color: #e5e7eb;
+    --prompt-bg-color: #dbeafe;
+    --prompt-text-color: #1e40af;
+    --completed-color: #10b981;
+    --tooltip-bg-color: rgba(0, 0, 0, 0.8);
+    --tooltip-text-color: #ffffff;
+}
+
+body {
+    font-family: 'Inter', 'Arial', sans-serif;
+    color: var(--text-color);
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* Header styles */
+header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: white;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-right: 1rem;
+}
+
+.signin-btn {
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.375rem;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.signin-btn:hover {
+    background-color: var(--primary-hover);
+}
+
+/* Main content styles */
+main {
+    margin-top: 1.5rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 4rem); /* Subtracting header height */
+}
+
+.left-panel, .right-panel {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.left-panel {
+    max-height: none; /* Remove the max-height constraint */
+    overflow-y: visible; /* Allow content to flow naturally */
+}
+
+.right-panel {
+    height: calc(100vh - 6rem); /* Adjust based on your header height */
+    display: flex;
+    flex-direction: column;
+}
+
+/* Progress bar styles */
+.progress-bar {
+    background-color: var(--border-color);
+    border-radius: 9999px;
+    height: 0.625rem;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.progress {
+    background-color: var(--primary-color);
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+/* Updated Completion box styles */
+.completion-box {
+    position: relative;
+    overflow: visible;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    font-size: 0.65rem;
+    font-weight: bold;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    cursor: pointer;
+    word-break: break-word;
+    line-height: 1;
+}
+
+.completion-box[data-tooltip]:before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--tooltip-bg-color);
+    color: var(--tooltip-text-color);
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    white-space: pre-wrap;
+    max-width: 200px;
+    width: max-content;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.completion-box[data-tooltip]:hover:before {
+    opacity: 1;
+    visibility: visible;
+}
+
+.completion-box.completed {
+    background-color: var(--completed-color);
+    color: white;
+}
+
+/* Tooltip content styles */
+.tooltip-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.tooltip-content strong {
+    margin-bottom: 0.25rem;
+}
+
+.tooltip-content span {
+    display: block;
+    text-align: left;
+}
+
+/* Chat styles */
+.chat-container {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    position: relative;
+}
+
+.chat-messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+}
+
+.chat-message {
+    margin-bottom: 1rem;
+    max-width: 80%;
+}
+
+.user-message {
+    background-color: var(--primary-color);
+    color: white;
+    align-self: flex-end;
+    border-radius: 1rem 1rem 0 1rem;
+    padding: 0.75rem 1rem;
+}
+
+.bot-message {
+    background-color: var(--border-color);
+    align-self: flex-start;
+    border-radius: 1rem 1rem 1rem 0;
+    padding: 0.75rem 1rem;
+}
+
+.chat-input-container {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.input-button-wrapper {
+    display: flex;
+    align-items: center;
+    flex-grow: 1;
+    margin-left: 0.5rem;
+}
+
+.chat-input {
+    flex-grow: 1;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    min-width: 0; /* Allows input to shrink below its default size */
+}
+
+.chat-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.mic-btn, .enter-btn {
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 0.375rem;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mic-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0.5rem;
+}
+
+.enter-btn {
+    width: auto;
+    min-width: 60px;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.mic-btn:hover, .enter-btn:hover {
+    background-color: var(--primary-hover);
+}
+
+.mic-btn svg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.mic-btn.active {
+    background-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.5);
+}
+
+/* Pre-generate button styles */
+.pre-generate-btn {
+    background-color: #10b981;
+    color: white;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    white-space: nowrap;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.pre-generate-btn:hover {
+    background-color: #059669;
+}
+
+/* Submit to BigQuery button styles */
+.submit-bigquery-btn {
+    background-color: var(--completed-color);
+    color: white;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-top: 0.5rem;
+    display: inline-block;
+}
+
+.submit-bigquery-btn:hover {
+    background-color: #0e9f6e;
+}
+
+/* Loading spinner styles */
+.loading-spinner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.loading-spinner.hidden {
+    display: none;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-spinner p {
+    margin-top: 10px;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+/* Looker Studio iframe styles */
+.looker-studio-container {
+    width: 100%;
+    aspect-ratio: 8/3; /* Maintains the 600x225 aspect ratio */
+    overflow: hidden;
+}
+
+.looker-studio-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+/* Scrollbar styles */
+.chat-messages::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Utility classes */
+.bg-white { background-color: white; }
+.bg-gray-100 { background-color: var(--background-color); }
+.bg-gray-200 { background-color: #e5e7eb; }
+.rounded-lg { border-radius: 0.5rem; }
+.shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+.space-y-6 > * + * { margin-top: 1.5rem; }
+.space-x-2 > * + * { margin-left: 0.5rem; }
+
+/* Responsive design */
+@media (min-width: 1024px) {
+    main {
+        flex-direction: row;
+    }
+
+    .left-panel {
+        width: 33.333%;
+        margin-right: 1.5rem;
+    }
+
+    .right-panel {
+        width: 66.667%;
+        height: calc(100vh - 6rem); /* Adjust based on your header height */
+    }
+}
+
+/* Responsive adjustments for header */
+@media (max-width: 640px) {
+    header .container {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .logo {
+        margin-bottom: 0.5rem;
+    }
+
+    .signin-btn {
+        align-self: flex-start;
+    }
+}
+
+/* Responsive adjustments for chat input */
+@media (max-width: 768px) {
+    .chat-input-container > div {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .pre-generate-btn {
+        margin-bottom: 0.5rem;
+        width: 100%;
+    }
+
+    .input-button-wrapper {
+        margin-left: 0;
+    }
+
+    .chat-input {
+        margin-bottom: 0.5rem;
+    }
+
+    .mic-btn, .enter-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+</style>
+</head>
+<body class="bg-gray-100 font-sans flex flex-col min-h-screen">
+    <body class="bg-gray-100 font-sans flex flex-col min-h-screen">
+        <header class="bg-white shadow-md sticky top-0 z-10">
+            <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+                <div class="logo text-xl font-bold text-blue-600">USU DocuCode</div>
+                <button id="signInBtn" class="signin-btn bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-300">Sign In</button>
+            </div>
+        </header>
+    
+        <main class="container mx-auto mt-6 flex flex-col lg:flex-row space-y-6 lg:space-y-0 lg:space-x-6 flex-grow">
+            <!-- Progress Bar Section -->
+            <section class="w-full lg:w-1/3 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold mb-4">Record Completion Progress</h2>
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="text-sm font-medium mb-1">Patient Info</h3>
+                            <div class="bg-gray-200 rounded-full h-2.5 mb-2">
+                                <div class="bg-blue-600 h-2.5 rounded-full" style="width: 0%" id="patient-progress"></div>
+                            </div>
+                            <div class="flex space-x-2">
+                                <div class="w-1/3 h-10 bg-gray-200 rounded flex items-center justify-center text-xs completion-box" id="patient-name-box" data-tooltip="">Name</div>
+                                <div class="w-1/3 h-10 bg-gray-200 rounded flex items-center justify-center text-xs completion-box" id="patient-age-box" data-tooltip="">Age</div>
+                                <div class="w-1/3 h-10 bg-gray-200 rounded flex items-center justify-center text-xs completion-box" id="patient-sex-box" data-tooltip="">Sex</div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-medium mb-1">Procedure Details</h3>
+                            <div class="bg-gray-200 rounded-full h-2.5 mb-2">
+                                <div class="bg-green-600 h-2.5 rounded-full" style="width: 0%" id="procedure-progress"></div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-date-box" data-tooltip="">Date</div>
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-location-box" data-tooltip="">Location</div>
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-preoperative_diagnosis-box" data-tooltip="">Pre-op</div>
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-postoperative_diagnosis-box" data-tooltip="">Post-op</div>
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-procedures_performed-box" data-tooltip="">Performed</div>
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-surgeon-box" data-tooltip="">Surgeon</div>
+                                <div class="h-10 bg-gray-200 rounded flex items-center justify-center completion-box" id="procedure-assistant_surgeon-box" data-tooltip="">Assistant</div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-medium mb-1">Coding</h3>
+                            <div class="bg-gray-200 rounded-full h-2.5 mb-2">
+                                <div class="bg-yellow-600 h-2.5 rounded-full" style="width: 0%" id="coding-progress"></div>
+                            </div>
+                            <div class="flex space-x-2">
+                                <div class="w-1/3 h-10 bg-gray-200 rounded flex items-center justify-center text-xs completion-box" id="coding-cpt-box" data-tooltip="">CPT</div>
+                                <div class="w-1/3 h-10 bg-gray-200 rounded flex items-center justify-center text-xs completion-box" id="coding-snomed_ct-box" data-tooltip="">SNOMED</div>
+                                <div class="w-1/3 h-10 bg-gray-200 rounded flex items-center justify-center text-xs completion-box" id="coding-icd_10-box" data-tooltip="">ICD-10</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+    
+                <div class="mt-6 bg-white rounded-lg shadow-md overflow-hidden">
+            <div class="looker-studio-container">
+                <iframe class="looker-studio-iframe" src="https://lookerstudio.google.com/embed/reporting/b146affa-0045-4db5-a021-9d3617e32b82/page/qKJEE" frameborder="0" allowfullscreen sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+            </div>
+        </div>
+            </section>
+    
+            <section class="right-panel w-full lg:w-2/3 flex flex-col">
+                <div class="chat-container bg-white rounded-lg shadow-md flex-grow flex flex-col relative">
+                    <div id="chatMessages" class="chat-messages flex-grow p-6 overflow-y-auto">
+                        <!-- Chat messages will go here -->
+                    </div>
+                    <div id="loadingSpinner" class="loading-spinner hidden">
+                        <div class="spinner"></div>
+                        <p>Processing...</p>
+                    </div>
+                    <div class="chat-input-container p-4 border-t">
+                        <div class="flex items-center space-x-2">
+                            <button id="preGenerateBtn" class="pre-generate-btn bg-green-500 hover:bg-green-600 text-white font-semibold px-3 py-2 rounded transition duration-300 flex-shrink-0">
+                                Generate sample field report
+                            </button>
+                            <div class="input-button-wrapper flex-grow flex items-center space-x-2">
+                                <input type="text" id="chatInput" class="chat-input flex-grow p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter procedure information here...">
+                                <button id="micBtn" class="mic-btn p-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors duration-300 flex-shrink-0">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                    </svg>
+                                </button>
+                                <button id="enterBtn" class="enter-btn bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-300 flex-shrink-0">Enter</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    <script>
+        // Application State
+let currentRecord = {
+    patient: {
+        name: "",
+        age: 0,
+        sex: "",
+        medical_record_number: ""
+    },
+    procedure: {
+        date: "",
+        location: "",
+        preoperative_diagnosis: "",
+        postoperative_diagnosis: "",
+        procedures_performed: [],
+        surgeon: "",
+        assistant_surgeon: ""
+    },
+    coding: {
+        snomed_ct: [],
+        icd_10: [],
+        cpt: []
+    }
+};
+let chatHistory = [];
+let isListening = false;
+let recognition;
+
+// DOM Elements
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const micBtn = document.getElementById('micBtn');
+const enterBtn = document.getElementById('enterBtn');
+const signInBtn = document.getElementById('signInBtn');
+const preGenerateBtn = document.getElementById('preGenerateBtn');
+const loadingSpinner = document.getElementById('loadingSpinner');
+
+// Progress Bar Elements
+const patientProgressBar = document.getElementById('patient-progress');
+const procedureProgressBar = document.getElementById('procedure-progress');
+const codingProgressBar = document.getElementById('coding-progress');
+
+// Completion Box Elements
+const completionBoxes = {
+    patient: ['name', 'age', 'sex'],
+    procedure: ['date', 'location', 'preoperative_diagnosis', 'postoperative_diagnosis', 'procedures_performed', 'surgeon', 'assistant_surgeon'],
+    coding: ['cpt', 'snomed_ct', 'icd_10']
+};
+
+// Event Listeners
+chatInput.addEventListener('keypress', handleChatInputKeypress);
+micBtn.addEventListener('click', toggleSpeechRecognition);
+enterBtn.addEventListener('click', sendChatMessage);
+signInBtn.addEventListener('click', toggleSignIn);
+preGenerateBtn.addEventListener('click', generateFieldReport);
+
+// Functions
+function handleChatInputKeypress(event) {
+    if (event.key === 'Enter') {
+        sendChatMessage();
+    }
+}
+
+function toggleSpeechRecognition() {
+    if (!recognition) {
+        initializeSpeechRecognition();
+    }
+
+    if (isListening) {
+        recognition.stop();
+        micBtn.classList.remove('active');
+    } else {
+        recognition.start();
+        micBtn.classList.add('active');
+    }
+
+    isListening = !isListening;
+}
+
+function initializeSpeechRecognition() {
+    if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+            console.log('Speech recognition started');
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            chatInput.value = transcript;
+            sendChatMessage();
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error', event.error);
+            micBtn.classList.remove('active');
+            isListening = false;
+        };
+
+        recognition.onend = () => {
+            console.log('Speech recognition ended');
+            micBtn.classList.remove('active');
+            isListening = false;
+        };
+    } else {
+        console.error('Speech recognition not supported in this browser');
+        micBtn.style.display = 'none';
+    }
+}
+
+async function sendChatMessage() {
+    const message = chatInput.value.trim();
+    if (message) {
+        addMessageToChat('user', message);
+        chatInput.value = '';
+        chatHistory.push({ role: 'user', content: message });
+        
+        showLoadingSpinner();
+        
+        try {
+            const response = await callCloudFunction(message);
+            console.log('Cloud function response:', response);
+
+            if (response && typeof response === 'object') {
+                if (response.message) {
+                    addMessageToChat('bot', response.message);
+                    chatHistory.push({ role: 'assistant', content: response.message });
+                }
+                
+                if (response.updated_record) {
+                    updateCurrentRecord(response.updated_record);
+                    console.log('Updated record:', currentRecord);
+                    updateProgressBars();
+                    updateCompletionBoxes();
+                }
+                
+                if (response.ready_to_insert) {
+                    console.log('Record is complete and ready to insert');
+                    addSubmitButton();
+                }
+                
+                if (response.next_prompt) {
+                    addMessageToChat('bot', response.next_prompt.prompt);
+                }
+            } else {
+                throw new Error('Invalid response structure from cloud function');
+            }
+        } catch (error) {
+            console.error('Error in sendChatMessage:', error);
+            addMessageToChat('bot', `An error occurred: ${error.message}`);
+        } finally {
+            hideLoadingSpinner();
+        }
+    }
+}
+
+function updateCurrentRecord(updatedRecord) {
+    // Merge the updated record with the current record
+    for (const section in updatedRecord) {
+        if (currentRecord.hasOwnProperty(section)) {
+            currentRecord[section] = {
+                ...currentRecord[section],
+                ...updatedRecord[section]
+            };
+        }
+    }
+}
+
+function addMessageToChat(sender, message) {
+    const messageElement = document.createElement('div');
+    messageElement.className = `mb-4 ${sender === 'user' ? 'text-right' : 'text-left'}`;
+    
+    let parsedMessage;
+    try {
+        parsedMessage = marked.parse(message || '');
+    } catch (error) {
+        console.error('Error parsing markdown:', error);
+        parsedMessage = 'Error displaying message';
+    }
+    
+    messageElement.innerHTML = `
+        <span class="inline-block bg-${sender === 'user' ? 'blue' : 'gray'}-200 rounded px-4 py-2 max-w-3/4">
+            ${parsedMessage}
+        </span>
+    `;
+
+    chatMessages.appendChild(messageElement);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function addSubmitButton() {
+    const submitButton = document.createElement('button');
+    submitButton.textContent = 'Submit to BigQuery';
+    submitButton.className = 'submit-bigquery-btn mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded';
+    submitButton.addEventListener('click', submitToBigQuery);
+    
+    const lastMessage = chatMessages.lastElementChild;
+    if (lastMessage) {
+        lastMessage.appendChild(submitButton);
+    } else {
+        chatMessages.appendChild(submitButton);
+    }
+}
+
+async function callCloudFunction(userMessage) {
+    const cloudFunctionUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/medical-dictation-function';
+
+    const payload = {
+        userMessage: userMessage,
+        currentRecord: currentRecord,
+        chatHistory: chatHistory
+    };
+    
+    try {
+        const response = await fetch(cloudFunctionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error calling cloud function:', error);
+        throw error;
+    }
+}
+
+function toggleSignIn() {
+    const isSignedIn = signInBtn.textContent === 'Sign Out';
+    signInBtn.textContent = isSignedIn ? 'Sign In' : 'Sign Out';
+    console.log(isSignedIn ? 'User signed out' : 'User signed in');
+    // Implement actual sign-in/sign-out logic here
+}
+
+function updateProgressBars() {
+    const patientProgress = calculateSectionProgress(currentRecord.patient);
+    const procedureProgress = calculateSectionProgress(currentRecord.procedure);
+    const codingProgress = calculateSectionProgress(currentRecord.coding);
+
+    updateProgressBar(patientProgressBar, patientProgress, 'Patient Info', currentRecord.patient);
+    updateProgressBar(procedureProgressBar, procedureProgress, 'Procedure Details', currentRecord.procedure);
+    updateProgressBar(codingProgressBar, codingProgress, 'Coding', currentRecord.coding);
+}
+
+function calculateSectionProgress(section) {
+    if (!section || typeof section !== 'object') {
+        console.error('Invalid section provided to calculateSectionProgress:', section);
+        return 0;
+    }
+
+    const totalFields = Object.keys(section).length;
+    if (totalFields === 0) return 0;
+
+    const filledFields = Object.values(section).filter(value => {
+        if (Array.isArray(value)) {
+            return value.length > 0;
+        }
+        return value !== "" && value !== 0 && value != null;
+    }).length;
+
+    return (filledFields / totalFields) * 100;
+}
+
+function updateProgressBar(progressBar, percentage, sectionName, sectionData) {
+    if (progressBar) {
+        progressBar.style.width = `${percentage}%`;
+        const completedItems = Object.values(sectionData).filter(value => {
+            if (Array.isArray(value)) return value.length > 0;
+            return value !== "" && value !== 0 && value != null;
+        }).length;
+        const totalItems = Object.keys(sectionData).length;
+        progressBar.setAttribute('data-tooltip', `<strong>${sectionName}:</strong><br>${percentage.toFixed(1)}% complete<br>${completedItems} / ${totalItems} items completed`);
+    } else {
+        console.error('Progress bar element not found');
+    }
+}
+
+function updateCompletionBoxes() {
+    for (const [section, fields] of Object.entries(completionBoxes)) {
+        fields.forEach(field => {
+            const boxElement = document.getElementById(`${section}-${field}-box`);
+            if (boxElement) {
+                const isCompleted = isFieldCompleted(currentRecord[section], field);
+                boxElement.classList.toggle('completed', isCompleted);
+                if (isCompleted) {
+                    const value = getFieldValue(currentRecord[section], field);
+                    const originalLabel = boxElement.textContent;
+                    boxElement.setAttribute('data-tooltip', `${value}`);
+                } else {
+                    boxElement.setAttribute('data-tooltip', '');
+                }
+            }
+        });
+    }
+}
+
+function isFieldCompleted(section, field) {
+    const value = section[field];
+    if (Array.isArray(value)) {
+        return value.length > 0;
+    }
+    return value !== "" && value !== 0 && value != null && value !== undefined;
+}
+
+function getFieldValue(section, field) {
+    const value = section[field];
+    if (Array.isArray(value)) {
+        return value.length > 0 ? formatArrayValue(value) : '';
+    }
+    return value ? value.toString() : '';
+}
+
+function formatArrayValue(arr) {
+    return arr.map(item => {
+        if (typeof item === 'object' && item !== null) {
+            return `${item.code}: ${item.description}`;
+        }
+        return item.toString();
+    }).join(',');
+}
+
+async function submitToBigQuery() {
+    const submitUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/submit-to-bigquery';
+    
+    showLoadingSpinner();
+    
+    try {
+        const response = await fetch(submitUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ record: currentRecord }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        addMessageToChat('bot', result.message || 'Record submitted successfully to BigQuery');
+        
+        // Reset the current record and update UI
+        currentRecord = JSON.parse(JSON.stringify(currentRecord));
+        updateProgressBars();
+        updateCompletionBoxes();
+    } catch (error) {
+        console.error('Error submitting to BigQuery:', error);
+        addMessageToChat('bot', `Error submitting to BigQuery: ${error.message}`);
+    } finally {
+        hideLoadingSpinner();
+    }
+}
+
+async function generateFieldReport() {
+    const generateUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/generate-field-report';
+    
+    showLoadingSpinner();
+    
+    try {
+        const response = await fetch(generateUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ currentRecord: currentRecord }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.fieldReport) {
+            chatInput.value = result.fieldReport;
+            addMessageToChat('bot', 'Sample field report generated. You can edit it before sending.');
+        } else {
+            throw new Error('No field report generated');
+        }
+    } catch (error) {
+        console.error('Error generating field report:', error);
+        addMessageToChat('bot', `Error generating field report: ${error.message}`);
+    } finally {
+        hideLoadingSpinner();
+    }
+}
+
+function showLoadingSpinner() {
+    loadingSpinner.classList.remove('hidden');
+}
+
+function hideLoadingSpinner() {
+    loadingSpinner.classList.add('hidden');
+}
+
+// Initialize the application
+function init() {
+    initializeSpeechRecognition();
+    addMessageToChat('bot', 'Welcome! Please provide information about the medical procedure. You can start by telling me the patient\'s name and age.');
+    updateProgressBars();
+    updateCompletionBoxes();
+}
+
+// Run initialization
+init();
+    </script>
+    </body>
+    </html>

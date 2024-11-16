@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document Manager</title>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Medical Coding Assistant</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
-    <style>
-        /* Custom styles will be inserted here */
-    </style>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+    <script src="app.js" defer></script>
 </head>
 <body class="bg-gray-100 font-sans flex flex-col min-h-screen">
     <header class="bg-white shadow-md sticky top-0 z-10">
         <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <div class="logo text-xl font-bold text-blue-600">USU DocuCode</div>
+            <div class="logo text-xl font-bold text-blue-600">Medical Coding Assistant</div>
             <button id="signInBtn" class="signin-btn bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-300">Sign In</button>
         </div>
     </header>
@@ -65,10 +65,10 @@
             </div>
 
             <div class="mt-6 bg-white rounded-lg shadow-md overflow-hidden">
-        <div class="looker-studio-container">
-            <iframe class="looker-studio-iframe" src="https://lookerstudio.google.com/embed/reporting/b146affa-0045-4db5-a021-9d3617e32b82/page/qKJEE" frameborder="0" allowfullscreen sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
-        </div>
-    </div>
+                <div class="looker-studio-container">
+                    <iframe class="looker-studio-iframe" src="https://lookerstudio.google.com/embed/reporting/b146affa-0045-4db5-a021-9d3617e32b82/page/qKJEE" frameborder="0" allowfullscreen sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+                </div>
+            </div>
         </section>
 
         <section class="right-panel w-full lg:w-2/3 flex flex-col">
@@ -100,8 +100,8 @@
         </section>
     </main>
 
-    <script>
-        // JavaScript code will be inserted here
-    </script>
+    <footer class="bg-white mt-auto py-4 text-center text-gray-600">
+        <p>&copy; 2024 Medical Coding Assistant. All rights reserved.</p>
+    </footer>
 </body>
 </html>
