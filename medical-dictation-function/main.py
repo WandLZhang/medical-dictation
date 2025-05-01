@@ -4,26 +4,29 @@ from flask_cors import CORS
 import json
 import logging
 import traceback
-from google.cloud import aiplatform
-from google.cloud.aiplatform.gapic.schema import predict
-from google.protobuf import json_format
-from google.protobuf.struct_pb2 import Value
+from google import genai
+from google.genai import types
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import re
+import time
+import os
 
 # Constants
-PROJECT_ID = "<redacted>"
+PROJECT_ID = "wz-data-catalog-demo"
 DATASET_ID = "health"
 TABLE_ID = "usu_procedures"
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize AI Platform client
-client_options = {"api_endpoint": "us-central1-aiplatform.googleapis.com"}
-client = aiplatform.gapic.PredictionServiceClient(client_options=client_options)
+# Initialize Gemini client
+client = genai.Client(
+    vertexai=True,
+    project=PROJECT_ID,
+    location="us-central1",
+)
 
 # JSON schema for BigQuery record
 RECORD_SCHEMA: Dict[str, Any] = {
@@ -180,27 +183,85 @@ def merge_user_input(current_record: Dict[str, Any], user_input: Dict[str, Any])
     return current_record
 
 def generate_content(prompt: str) -> str:
-    """Generate content using the medlm-large model."""
-    logger.info("Generating content using the medlm-large model.")
-    instance_dict = {"content": prompt}
-    instance = json_format.ParseDict(instance_dict, Value())
-    instances = [instance]
-    parameters_dict = {
-        "candidateCount": 1,
-        "maxOutputTokens": 1024,
-        "temperature": 0,
-        "topP": 0.8,
-        "topK": 40
-    }
-    parameters = json_format.ParseDict(parameters_dict, Value())
-    response = client.predict(
-        endpoint="projects/<redacted>/locations/us-central1/publishers/google/models/medlm-large",
-        instances=instances,
-        parameters=parameters
+    """Generate content using the Gemini 2.0 model."""
+    logger.info("Generating content using the Gemini 2.0 model.")
+    
+    # Add explicit JSON-only instruction to the prompt
+    prompt += "\n\nIMPORTANT: Return ONLY the raw JSON object. Do not include any explanatory text, markdown formatting, or code blocks. The response should start with '{' and end with '}' with no other characters before or after."
+    
+    # Create content for Gemini
+    contents = [
+        types.Content(
+            role="user",
+            parts=[{"text": prompt}]
+        )
+    ]
+
+    # Configure Gemini model - optimized for JSON generation
+    model = "gemini-2.0-flash-001"
+    generate_content_config = types.GenerateContentConfig(
+        temperature=0,
+        top_p=0.95,
+        candidate_count=1,
+        max_output_tokens=8192,
+        response_modalities=["TEXT"],
+        safety_settings=[
+            types.SafetySetting(
+                category="HARM_CATEGORY_HATE_SPEECH",
+                threshold="OFF"
+            ),
+            types.SafetySetting(
+                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold="OFF"
+            ),
+            types.SafetySetting(
+                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold="OFF"
+            ),
+            types.SafetySetting(
+                category="HARM_CATEGORY_HARASSMENT",
+                threshold="OFF"
+            )
+        ]
     )
-    predictions = response.predictions
-    for prediction in predictions:
-        return dict(prediction)["content"]
+
+    # Initialize retry parameters
+    base_delay = 5  # Start with 5 seconds
+    max_attempts = 3
+    attempt = 0
+    
+    # Retry logic for handling rate limits
+    while attempt < max_attempts:
+        try:
+            # Generate response using Gemini
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            )
+            
+            # Print the raw response for debugging (visible in cloud function logs)
+            print("========== RAW GEMINI RESPONSE START ==========")
+            print(response.text)
+            print("========== RAW GEMINI RESPONSE END ============")
+            
+            return response.text.strip()
+            
+        except Exception as e:
+            error_str = str(e)
+            if "429 RESOURCE_EXHAUSTED" in error_str:
+                attempt += 1
+                # Calculate exponential backoff delay
+                delay = min(base_delay * (2 ** (attempt - 1)), 60)  # Cap at 60 seconds
+                print(f"Rate limited. Attempt {attempt} of {max_attempts}. Waiting {delay} seconds...")
+                time.sleep(delay)
+            else:
+                # If it's not a rate limit error, re-raise
+                print(f"ERROR GENERATING CONTENT: {error_str}")
+                raise
+    
+    # If we've exhausted all retries
+    raise Exception(f"Failed to generate content after {max_attempts} attempts due to rate limiting")
 
 def is_record_complete(record: Dict[str, Any]) -> bool:
     """Check if the record is complete based on required fields."""
@@ -243,6 +304,15 @@ import re
 
 def sanitize_json_string(json_string: str) -> str:
     """Sanitize the JSON string to ensure it's valid."""
+    if not json_string or not json_string.strip():
+        logger.error("Empty JSON string received")
+        return '{}'
+    
+    # Print the raw input for debugging (visible in cloud function logs)
+    print("========== JSON INPUT START ==========")
+    print(json_string[:500] + ("..." if len(json_string) > 500 else ""))
+    print("========== JSON INPUT END ============")
+    
     # Remove any potential Unicode BOM
     json_string = json_string.strip().lstrip('\ufeff')
     
@@ -252,11 +322,53 @@ def sanitize_json_string(json_string: str) -> str:
     # Remove any comments (single-line or multi-line)
     json_string = re.sub(r'//.*?$|/\*.*?\*/', '', json_string, flags=re.MULTILINE | re.DOTALL)
     
+    # Try to extract JSON content using different strategies
+    cleaned_text = json_string
+    
+    # First try to find JSON between ```json and ``` markers (markdown code blocks)
+    if '```json' in cleaned_text or '```' in cleaned_text:
+        print("Attempting to extract JSON from markdown code block")
+        match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', cleaned_text)
+        if match:
+            cleaned_text = match.group(1).strip()
+            print(f"Extracted JSON from code block: {cleaned_text[:100]}...")
+    
+    # If that fails or if we still don't have valid JSON, try to find JSON between { and }
+    if not cleaned_text.startswith('{') or not cleaned_text.endswith('}'):
+        print("Attempting to extract JSON between curly braces")
+        if '{' in cleaned_text and '}' in cleaned_text:
+            start = cleaned_text.find('{')
+            end = cleaned_text.rfind('}') + 1
+            if start >= 0 and end > start:
+                cleaned_text = cleaned_text[start:end]
+                print(f"Extracted JSON between braces: {cleaned_text[:100]}...")
+    
     # Parse the JSON string
     try:
-        parsed_json = json.loads(json_string)
+        print("Attempting to parse JSON")
+        parsed_json = json.loads(cleaned_text)
+        print("Successfully parsed JSON")
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON: {str(e)}")
+        print(f"JSON PARSING ERROR: {str(e)}")
+        print(f"ERROR CONTEXT: {cleaned_text[max(0, e.pos-50):min(len(cleaned_text), e.pos+50)]}")
+        
+        # Try to recover by wrapping the response in a standard structure
+        try:
+            # First attempt: Fix common issues like unescaped quotes
+            fixed_text = re.sub(r'(?<!\\)"(?=(,|\s*}|\s*]|\s*:))', '\\"', cleaned_text)
+            parsed_json = json.loads(fixed_text)
+            print("Successfully parsed JSON after fixing quotes")
+        except json.JSONDecodeError:
+            try:
+                # Second attempt: Create a fallback object with the raw text
+                escaped_text = cleaned_text.replace('"', '\\"').replace('\n', '\\n')
+                fallback_json = f'{{"message": "Error parsing model response", "raw_text": "{escaped_text}"}}'
+                parsed_json = json.loads(fallback_json)
+                print("Using fallback JSON structure")
+            except:
+                # If all else fails, return a simple error object
+                print("ALL JSON PARSING ATTEMPTS FAILED")
+                raise ValueError(f"Invalid JSON: {str(e)}")
     
     # Custom JSON encoder to handle escaping
     class CustomJSONEncoder(json.JSONEncoder):
@@ -272,7 +384,7 @@ def sanitize_json_string(json_string: str) -> str:
 
 @functions_framework.http
 def medical_record_assistant(request):
-    """HTTP Cloud Function for medical record creation using medlm-large model."""
+    """HTTP Cloud Function for medical record creation using Gemini 2.0 model."""
     # Handle CORS preflight request
     if request.method == 'OPTIONS':
         headers = {
@@ -303,14 +415,48 @@ def medical_record_assistant(request):
     if not is_valid:
         return jsonify({"error": error_message}), 400, headers
 
-    # Prepare the input for the main medlm-large query
+    # Prepare the input for the Gemini 2.0 query
     main_prompt = create_prompt(user_message, current_record, current_prompt)
 
-    # Generate content using medlm-large
+    # Generate content using Gemini 2.0
     try:
         response_text = generate_content(main_prompt)
         sanitized_response = sanitize_json_string(response_text)
         response_json = json.loads(sanitized_response)
+        
+        # Print the response for debugging (visible in cloud function logs)
+        print("========== PARSED RESPONSE JSON START ==========")
+        print(json.dumps(response_json, indent=2)[:1000])
+        print("========== PARSED RESPONSE JSON END ============")
+        
+        # Auto-fix the structure if it doesn't have the expected format
+        if isinstance(response_json, dict) and "updated_record" not in response_json:
+            # If we have direct fields like 'procedure', 'patient', or 'coding', they should be wrapped
+            record_fields = ['procedure', 'patient', 'coding']
+            has_direct_fields = any(field in response_json for field in record_fields)
+            
+            if has_direct_fields:
+                print("Response has direct fields without 'updated_record' wrapper - auto-fixing structure")
+                # Create a properly structured response by wrapping the current response
+                fixed_response = {
+                    "updated_record": {},
+                    "message": "Processed user input and updated fields."
+                }
+                
+                # Copy all record-related fields into updated_record
+                for field in record_fields:
+                    if field in response_json:
+                        fixed_response["updated_record"][field] = response_json[field]
+                
+                # For any other fields that aren't part of the record structure, copy them at the top level
+                for key, value in response_json.items():
+                    if key not in record_fields:
+                        fixed_response[key] = value
+                
+                # Replace the response with our fixed version
+                print("Fixed response structure:")
+                print(json.dumps(fixed_response, indent=2)[:1000])
+                response_json = fixed_response
         
         if isinstance(response_json, dict) and "updated_record" in response_json:
             updated_record = merge_user_input(current_record, response_json["updated_record"])
@@ -328,17 +474,29 @@ def medical_record_assistant(request):
             else:
                 response_json['message'] = response_json.get('message', '').strip()
         else:
-            raise ValueError("Invalid response structure from medlm-large model")
+            # Handle invalid response structure with detailed print statements
+            print("CRITICAL ERROR: Invalid response structure from Gemini 2.0 model")
+            print(f"Keys found in response: {list(response_json.keys()) if isinstance(response_json, dict) else 'not a dict'}")
+            print(f"FULL RAW GEMINI RESPONSE: {response_text}")
+            
+            # Create a fallback response with the raw Gemini output for debugging
+            error_response = {
+                "error": "Invalid response structure from Gemini model",
+                "raw_gemini_response": response_text,
+                "parsed_json": response_json if isinstance(response_json, dict) else str(response_json),
+                "debug_info": "The model did not return the expected 'updated_record' structure"
+            }
+            return jsonify(error_response), 500, headers
         
         return jsonify(response_json), 200, headers
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON: {str(e)}")
-        logger.error(f"Raw response: {response_text}")
-        logger.error(f"Sanitized response: {sanitized_response}")
+        print(f"ERROR DECODING JSON: {str(e)}")
+        print(f"RAW RESPONSE: {response_text}")
+        print(f"SANITIZED RESPONSE: {sanitized_response}")
         return jsonify({"error": f"Error decoding JSON response: {str(e)}"}), 500, headers
     except Exception as e:
-        logger.error(f"Error generating response: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        print(f"ERROR GENERATING RESPONSE: {str(e)}")
+        print(f"TRACEBACK: {traceback.format_exc()}")
         return jsonify({"error": "An unexpected error occurred. Please try again later."}), 500, headers
 
 if __name__ == "__main__":
