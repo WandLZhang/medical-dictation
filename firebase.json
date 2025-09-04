@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "site": "medical-dictation-demo-2025-09",
+    "public": "frontend/dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

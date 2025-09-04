@@ -1,3 +1,6 @@
+// Import dependencies
+import { marked } from 'marked';
+
 // Application State
 let currentRecord = {
     patient: {
@@ -364,26 +367,56 @@ async function generateFieldReport() {
     const generateUrl = 'https://us-central1-wz-data-catalog-demo.cloudfunctions.net/generate-field-report';
     
     showLoadingSpinner();
+    addMessageToChat('bot', 'Generating field report...');
     
     try {
         const response = await fetch(generateUrl, {
-            method: 'POST',
+            method: 'GET',  // Changed to GET to match the backend
             headers: {
-                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
             },
-            body: JSON.stringify({ currentRecord: currentRecord }),
         });
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const result = await response.json();
-        if (result.fieldReport) {
-            chatInput.value = result.fieldReport;
-            addMessageToChat('bot', 'Sample field report generated. You can edit it before sending.');
-        } else {
-            throw new Error('No field report generated');
+        // Handle SSE stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fieldReport = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.chunk) {
+                            fieldReport += data.chunk;
+                        } else if (data.error) {
+                            throw new Error(data.error);
+                        } else if (data.done) {
+                            // Stream completed
+                            if (fieldReport) {
+                                chatInput.value = fieldReport;
+                                addMessageToChat('bot', 'Sample field report generated. You can edit it before sending.');
+                            } else {
+                                throw new Error('No field report generated');
+                            }
+                        }
+                    } catch (parseError) {
+                        // Skip malformed JSON lines
+                        console.warn('Failed to parse SSE data:', line, parseError);
+                    }
+                }
+            }
         }
     } catch (error) {
         console.error('Error generating field report:', error);

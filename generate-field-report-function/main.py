@@ -1,16 +1,13 @@
 import functions_framework
 from flask import jsonify
-import base64
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part, SafetySetting
+from google import genai
+from google.genai import types
 import json
 
 # Constants
-PROJECT_ID = "<redacted>"
-LOCATION = "us-central1"
-MODEL_NAME = "gemini-1.5-flash-001"
+PROJECT_ID = "wz-data-catalog-demo"
 
-textsi_1 = """Generate random military physician field reports based on procedures performed. It should read like a spoken dictation with awkward (yet natural) oral wordings. Provide variation in the procedures that would fit into these CPT Category 1 codes:
+SYSTEM_INSTRUCTION = """Generate random military physician field reports based on procedures performed. It should read like a spoken dictation with awkward (yet natural) oral wordings. Provide variation in the procedures that would fit into these CPT Category 1 codes:
 Evaluation and Management (99202–99499)
 Anesthesia (00100–01999)
 Surgery (10004–69990) — further broken into smaller groups by body area or system within this code range
@@ -20,7 +17,7 @@ Medicine (90281–99199, 99500-99607)
 
 # Example output
 
-This is Captain Jane Smith, dictating an operative report for Sergeant John Doe. Uh, let\'s see, he\'s twenty-eight years old, male. Medical record number is one, two, three, four, five, six, seven, eight, nine, zero.
+This is Captain Jane Smith, dictating an operative report for Sergeant John Doe. Uh, let's see, he's twenty-eight years old, male. Medical record number is one, two, three, four, five, six, seven, eight, nine, zero.
 
 Okay, the date of the procedure was October 27th, 2023. This was performed at Field Surgical Unit Alpha, Operating Room One.
 
@@ -30,9 +27,9 @@ Preoperative diagnosis: Gunshot wound to the right lower extremity with suspecte
 
 The procedure we performed was an exploratory laparotomy, a right lower extremity fasciotomy, and a superficial femoral artery repair using an interposition saphenous vein graft.
 
-Now, for the indications... Sergeant Doe presented with a gunshot wound to the right lower leg sustained during combat. On exam, he had diminished distal pulses and, uh, we were concerned about compartment syndrome. Unfortunately, we didn\'t have access to imaging studies due to the field conditions. We felt that urgent surgical exploration was necessary to control the bleeding and, uh, to fully assess and address the vascular and soft tissue injuries.
+Now, for the indications... Sergeant Doe presented with a gunshot wound to the right lower leg sustained during combat. On exam, he had diminished distal pulses and, uh, we were concerned about compartment syndrome. Unfortunately, we didn't have access to imaging studies due to the field conditions. We felt that urgent surgical exploration was necessary to control the bleeding and, uh, to fully assess and address the vascular and soft tissue injuries.
 
-Okay, so, the procedure... After the patient was placed under general anesthesia, we positioned him supine on the operating table. The right lower extremity was prepped and draped in the usual sterile fashion. We began with a midline laparotomy incision to quickly assess for any intra-abdominal injuries, but, um, thankfully, we didn\'t find any significant injuries there.
+Okay, so, the procedure... After the patient was placed under general anesthesia, we positioned him supine on the operating table. The right lower extremity was prepped and draped in the usual sterile fashion. We began with a midline laparotomy incision to quickly assess for any intra-abdominal injuries, but, um, thankfully, we didn't find any significant injuries there.
 
 Next, we made a longitudinal incision over the course of the superficial femoral artery in the right thigh. We encountered a significant hematoma, and the superficial femoral artery was found to be, as I said, completely transected. We obtained proximal and distal control of the artery.
 
@@ -40,85 +37,103 @@ A right lower extremity fasciotomy was then performed to relieve the compartment
 
 Hemostasis was achieved, and the wound was irrigated with sterile saline solution. We closed the wound in layers using absorbable sutures and applied a sterile dressing.
 
-Estimated blood loss was approximately 800 milliliters. We gave him two liters of lactated Ringer\'s solution.
+Estimated blood loss was approximately 800 milliliters. We gave him two liters of lactated Ringer's solution.
 
 Uh, no complications. The patient was transferred to a higher level of care for postoperative monitoring and further management.
 
-Prognosis is fair. Uh, he\'s at risk for complications including infection, graft failure, and, uh, potentially limb loss. Close monitoring and aggressive treatment will be necessary.
+Prognosis is fair. Uh, he's at risk for complications including infection, graft failure, and, uh, potentially limb loss. Close monitoring and aggressive treatment will be necessary.
 
-Recommendations... Continue broad-spectrum antibiotics, serial vascular checks, and monitor for any signs of compartment syndrome. We need to get repeat imaging studies as soon as they become available. Uh, and we\'ll need to consider transfer to a vascular surgery center for definitive management once that\'s possible.
+Recommendations... Continue broad-spectrum antibiotics, serial vascular checks, and monitor for any signs of compartment syndrome. We need to get repeat imaging studies as soon as they become available. Uh, and we'll need to consider transfer to a vascular surgery center for definitive management once that's possible.
 
 Okay, that concludes this operative report. Dictated by Captain Jane Smith, MD, on October 27th, 2023, at 2200 hours."""
 
-generation_config = {
-    "max_output_tokens": 8192,
-    "temperature": 1.45,
-    "top_p": 0.95,
-}
-
-safety_settings = [
-    SafetySetting(
-        category=SafetySetting.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold=SafetySetting.HarmBlockThreshold.OFF
-    ),
-    SafetySetting(
-        category=SafetySetting.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold=SafetySetting.HarmBlockThreshold.OFF
-    ),
-    SafetySetting(
-        category=SafetySetting.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold=SafetySetting.HarmBlockThreshold.OFF
-    ),
-    SafetySetting(
-        category=SafetySetting.HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold=SafetySetting.HarmBlockThreshold.OFF
-    ),
-]
-
-def generate_field_report():
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-    model = GenerativeModel(
-        MODEL_NAME,
-        system_instruction=[textsi_1]
-    )
-    responses = model.generate_content(
-        ["""generate a field report"""],
-        generation_config=generation_config,
-        safety_settings=safety_settings,
-        stream=True,
-    )
-
-    full_response = ""
-    for response in responses:
-        full_response += response.text
-
-    return full_response
 
 @functions_framework.http
 def generate_field_report_http(request):
-    """HTTP Cloud Function for generating a field report."""
+    """HTTP Cloud Function for generating a field report with SSE streaming."""
     # Set CORS headers for the preflight request
     if request.method == 'OPTIONS':
         # Allows GET requests from any origin with the Content-Type
         # header and caches preflight response for an 3600s
         headers = {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET',
+            'Access-Control-Allow-Methods': 'GET, POST',
             'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Max-Age': '3600'
         }
         return ('', 204, headers)
 
-    # Set CORS headers for the main request
-    headers = {
+    # For SSE streaming response
+    def generate():
+        try:
+            client = genai.Client(
+                vertexai=True,
+                project=PROJECT_ID,
+                location="global",
+            )
+
+            model = "gemini-2.5-flash"
+            
+            # Combine system instruction with user prompt
+            combined_prompt = f"{SYSTEM_INSTRUCTION}\n\nGenerate a field report"
+            
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text=combined_prompt)]
+                )
+            ]
+
+            generate_content_config = types.GenerateContentConfig(
+                temperature=1.45,
+                top_p=0.95,
+                max_output_tokens=8192,
+                safety_settings=[
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HATE_SPEECH",
+                        threshold="OFF"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                        threshold="OFF"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        threshold="OFF"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HARASSMENT",
+                        threshold="OFF"
+                    )
+                ],
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=0,
+                ),
+            )
+
+            # Stream the response
+            for chunk in client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if chunk.text:
+                    # Format as SSE
+                    yield f"data: {json.dumps({'chunk': chunk.text})}\n\n"
+            
+            # Send completion signal
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    # Return SSE response
+    return generate(), 200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*'
     }
-
-    try:
-        field_report = generate_field_report()
-        return jsonify({"fieldReport": field_report}), 200, headers
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500, headers
 
 if __name__ == "__main__":
     # This is used when running locally only. When deploying to Google Cloud Functions,
